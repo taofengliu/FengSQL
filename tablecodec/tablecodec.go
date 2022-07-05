@@ -43,6 +43,7 @@ const (
 	RecordRowKeyLen       = prefixLen + idLen /*handle*/
 	tablePrefixLength     = 1
 	recordPrefixSepLength = 2
+	indexPrefixSepLength  = 2
 )
 
 // TableSplitKeyLen is the length of key 't{table_id}' which is used for table split.
@@ -98,6 +99,31 @@ func DecodeRecordKey(key kv.Key) (tableID int64, handle int64, err error) {
 	 *   5. understanding the coding rules is a prerequisite for implementing this function,
 	 *      you can learn it in the projection 1-2 course documentation.
 	 */
+
+	if len(key) < prefixLen {
+		return 0, 0, errInvalidRecordKey.GenWithStack("invalidPrefix")
+	}
+
+	// 检查Table前缀
+	if !hasTablePrefix(key) {
+		return 0, 0, errInvalidRecordKey.GenWithStack("noTablePrefix")
+	}
+
+	key = key[tablePrefixLength:]
+	key, tableID, err = codec.DecodeInt(key)
+
+	// 检查Record前缀
+	if !hasRecordPrefixSep(key) {
+		return 0, 0, errInvalidRecordKey.GenWithStack("noIndexPrefixSep")
+	}
+
+	key = key[recordPrefixSepLength:]
+	key, handle, err = codec.DecodeInt(key)
+
+	if err != nil {
+		return 0, 0, err
+	}
+
 	return
 }
 
@@ -148,7 +174,36 @@ func DecodeIndexKeyPrefix(key kv.Key) (tableID int64, indexID int64, indexValues
 	 *   5. understanding the coding rules is a prerequisite for implementing this function,
 	 *      you can learn it in the projection 1-2 course documentation.
 	 */
-	return tableID, indexID, indexValues, nil
+
+	if len(key) < prefixLen {
+		return 0, 0, nil, errInvalidRecordKey.GenWithStack("invalidPrefix")
+	}
+
+	// 检查Table前缀
+	if !hasTablePrefix(key) {
+		return 0, 0, nil, errInvalidRecordKey.GenWithStack("noTablePrefix")
+	}
+
+	key = key[tablePrefixLength:]
+	key, tableID, err = codec.DecodeInt(key)
+
+	if err != nil {
+		return 0, 0, nil, err
+	}
+
+	// 检查Index前缀
+	if !hasIndexPrefixSep(key) {
+		return 0, 0, nil, errInvalidRecordKey.GenWithStack("noIndexPrefixSep")
+	}
+
+	key = key[indexPrefixSepLength:]
+	key, indexID, err = codec.DecodeInt(key)
+
+	if err != nil {
+		return 0, 0, nil, err
+	}
+
+	return tableID, indexID, key, nil
 }
 
 // DecodeIndexKey decodes the key and gets the tableID, indexID, indexValues.
@@ -212,6 +267,10 @@ func hasTablePrefix(key kv.Key) bool {
 
 func hasRecordPrefixSep(key kv.Key) bool {
 	return key[0] == recordPrefixSep[0] && key[1] == recordPrefixSep[1]
+}
+
+func hasIndexPrefixSep(key kv.Key) bool {
+	return key[0] == indexPrefixSep[0] && key[1] == indexPrefixSep[1]
 }
 
 // DecodeMetaKey decodes the key and get the meta key and meta field.
